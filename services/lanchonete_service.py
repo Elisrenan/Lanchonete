@@ -13,4 +13,13 @@ class LanchoneteService:
     def obter_cliente(self, cpf: str) -> Cliente | None:
         return db.clientes_por_cpf.get(cpf)
 
+    def criar_produto(self):
+        pass
+
+    def obter_produto(self):
+        pass
+
+    def alterar_valor_produto(self):
+        pass
+
 service = LanchoneteService()
