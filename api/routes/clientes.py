@@ -9,3 +9,12 @@ def criar(payload: ClienteCreate):
     cliente = service.criar_cliente(payload.cpf, payload.nome)
     return ClienteOut(cpf=cliente.cpf, nome=cliente.nome)
 
+@router.get("/{cpf}", response_model=ClienteOut)
+def obter(cpf: str):
+    cliente = service.obter_cliente(cpf)
+    if not cliente:
+        raise HTTPException(
+            status_code=404, 
+            detail="Cliente não encontrado"
+            )
+    return ClienteOut(cpf=cliente.cpf, nome=cliente.nome)
