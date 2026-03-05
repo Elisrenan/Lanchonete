@@ -1,5 +1,4 @@
 from domain.cliente import Cliente
-from domain.produto import Produto
 from repositories.memory import db
 
 class LanchoneteService:
