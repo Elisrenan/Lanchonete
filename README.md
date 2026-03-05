@@ -38,3 +38,12 @@
 	api/__init__.py 
 
 	api/routes/__init__.py
+
+
+### Configurando o venv
+
+sudo apt install python3.12-venv
+
+source venv/bin/activate
+
+source venv/bin/deactivate
