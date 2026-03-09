@@ -12,3 +12,5 @@ class ProdutoOut(BaseModel):
     valor: float
     desconto_percentual: float = 0.0
 
+class ProdutoAlterarValor(BaseModel):
+    novo_valor: float
