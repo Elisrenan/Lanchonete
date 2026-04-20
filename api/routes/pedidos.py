@@ -11,7 +11,7 @@ def criar(payload: PedidoCreate):
     return PedidoOut(
         codigo=pedido.codigo,
         cpf=pedido.cliente.cpf,
-        estaEntregue=pedido.estaEntregue,
+        esta_entregue=pedido.esta_entregue,
         produtos=[p.codigo for p in pedido.listaProdutos],
     )
 
@@ -37,6 +37,6 @@ def obter(cod_pedido: int):
     return PedidoOut(
         codigo=pedido.codigo,
         cpf=pedido.cliente.cpf,
-        estaEntregue=pedido.estaEntregue,
+        esta_entregue=pedido.esta_entregue,
         produtos=[p.codigo for p in pedido.listaProdutos],
     )
