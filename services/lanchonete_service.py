@@ -22,6 +22,7 @@ class LanchoneteService:
     Recebe os repositórios por injeção de dependência, mantendo
     o código desacoplado da implementação de persistência.
     """
+    def __init__(self, cliente_repo, produto_repo, pedido_repo):
         """Inicializa o serviço injetando os três repositórios.
 
         Args:

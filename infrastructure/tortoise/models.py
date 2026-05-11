@@ -21,7 +21,7 @@ class ClienteModel(Model):
         cpf:  Chave primária — CPF do cliente (formato livre, máx. 14 chars).
         nome: Nome completo do cliente. Padrão vazio para cadastros parciais.
     """
-    cpf = fields.CharField(pk=True, max_length=14)
+    cpf = fields.CharField(primary_key=True, max_length=14)
     nome = fields.CharField(max_length=120, default="")
 
 
@@ -34,7 +34,7 @@ class ProdutoModel(Model):
         tipo:                 Categoria: 1 = com desconto | 2 = sem desconto.
         desconto_percentual:  Percentual a descontar quando tipo == 1.
     """
-    codigo = fields.IntField(pk=True)
+    codigo = fields.IntField(primary_key=True)
     valor = fields.FloatField()
     tipo = fields.IntField()
     desconto_percentual = fields.FloatField(default=0.0)
@@ -54,7 +54,7 @@ class PedidoModel(Model):
         esta_cancelado:  True se o pedido foi cancelado antes da entrega.
         observacao:      Instrução livre do cliente (ex: "sem cebola").
     """
-    codigo = fields.IntField(pk=True)
+    codigo = fields.IntField(primary_key=True)
     cpf_cliente = fields.CharField(max_length=14)
     qtd_max_produtos = fields.IntField()
     estaEntregue = fields.BooleanField(default=False)
@@ -73,6 +73,6 @@ class PedidoItemModel(Model):
         pedido_codigo:  Referência ao código do PedidoModel.
         produto_codigo: Referência ao código do ProdutoModel.
     """
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     pedido_codigo = fields.IntField()
     produto_codigo = fields.IntField()
