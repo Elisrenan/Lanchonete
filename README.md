@@ -144,6 +144,7 @@ pytest -v
 
 ```
 main.py                          # Ponto de entrada FastAPI + registro do Tortoise ORM
+seed.py                          # Script para popular o banco com dados de exemplo
 pytest.ini                       # Configuração do pytest (asyncio_mode = auto)
 requirements.txt
 app/
@@ -199,6 +200,30 @@ As tabelas são geradas pelo Tortoise ORM com base nos models definidos em `infr
 | `produtomodel`  | Produtos disponíveis (código como chave primária)   |
 | `pedidomodel`   | Pedidos realizados                                  |
 | `pedidoitemmodel` | Itens de cada pedido (relação pedido ↔ produto)   |
+
+---
+
+## Seed — Popular o banco de dados
+
+O script `seed.py` apaga todos os dados existentes e recria um conjunto de
+exemplos baseado nos cenários dos testes automatizados.
+
+```bash
+python seed.py
+```
+
+**Dados inseridos:**
+
+| Tipo | Dados |
+|------|-------|
+| Clientes | Cliente X (`11122233344`), Joao (`12345678900`), Maria (`99988877766`) |
+| Produtos | #1 tipo 1 R\$10 (10% desconto), #2 tipo 2 R\$20, #3 tipo 2 R\$15 |
+| Pedido #1 | Finalizado — Cliente X, produtos 1+2, total R\$29,00 |
+| Pedido #2 | Cancelado — Joao |
+| Pedido #3 | Em aberto com observação "Sem cebola" — Maria |
+
+> O `seed.py` afeta apenas o `lanchonete.db` em disco.  
+> Os testes usam banco **em memória** e não são afetados pelo seed.
 
 ---
 
