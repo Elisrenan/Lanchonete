@@ -34,6 +34,7 @@ class Pedido:
         self.listaProdutos: List[Produto] = []
         self.esta_entregue: bool = False
         self.esta_cancelado: bool = False
+        self.observacao: str = ""
 
         if self.qtd_max_produtos <= 0:
             raise ValueError("Quantidade máxima deve ser maior que zero")
@@ -68,6 +69,33 @@ class Pedido:
         for p in self.listaProdutos:
             total += p.preco_final()
         return float(total)
+
+    def adicionar_observacao(self, observacao: str) -> bool:
+        """Registra ou substitui a observação do pedido.
+
+        Args:
+            observacao: Texto da observação (máx. 200 caracteres, não vazio).
+
+        Returns:
+            True se registrada, False se o pedido estiver finalizado,
+            a observação for vazia ou ultrapassar 200 caracteres.
+        """
+        if self.esta_entregue:
+            return False
+
+        if observacao is None:
+            return False
+
+        observacao = observacao.strip()
+
+        if observacao == "":
+            return False
+
+        if len(observacao) > 200:
+            return False
+
+        self.observacao = observacao
+        return True
 
     def cancelar(self) -> bool:
         if self.esta_entregue:

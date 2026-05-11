@@ -160,5 +160,28 @@ class LanchoneteService:
         pedidos = list(db.pedidos_por_codigo.values())
         return [p for p in pedidos if p.esta_cancelado]
 
+    def adicionar_observacao(self, cod_pedido: int, observacao: str) -> bool:
+        """Adiciona ou substitui a observação de um pedido.
+
+        Args:
+            cod_pedido: Código do pedido.
+            observacao: Texto da observação.
+
+        Returns:
+            True se registrada, False se pedido não encontrado ou inválido.
+        """
+        pedido = db.pedidos_por_codigo.get(cod_pedido)
+        if pedido is None:
+            return False
+        return pedido.adicionar_observacao(observacao)
+
+    def buscar_observacao_pedido(self, cod_pedido: int) -> Pedido | None:
+        """Busca um pedido para retornar sua observação.
+
+        Returns:
+            Pedido encontrado ou None.
+        """
+        return db.pedidos_por_codigo.get(cod_pedido)
+
 
 service = LanchoneteService()

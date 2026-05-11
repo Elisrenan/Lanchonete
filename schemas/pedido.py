@@ -24,3 +24,16 @@ class PedidoOut(BaseModel):
     esta_entregue: bool
     esta_cancelado: bool
     produtos: List[int]
+
+
+class ObservacaoInput(BaseModel):
+    """Payload para adicionar observação a um pedido."""
+
+    observacao: str
+
+
+class ObservacaoOut(BaseModel):
+    """Dados de retorno da observação de um pedido."""
+
+    codigo: int
+    observacao: str
