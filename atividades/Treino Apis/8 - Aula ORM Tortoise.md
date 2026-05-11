@@ -1,4 +1,308 @@
-# Aula 08 (v2): Testando APIs com Tortoise ORM e pytest-asyncio
+# Aula 08 (v2): Persistência Real com Tortoise ORM + SQLite
+
+## O que é um ORM?
+
+ORM significa **Object-Relational Mapper** (Mapeador Objeto-Relacional).
+
+Em vez de escrever SQL diretamente, você define **classes Python** que representam
+tabelas do banco. O ORM traduz operações nessas classes para SQL automaticamente.
+
+```
+SEM ORM:
+  cursor.execute("INSERT INTO clientes (cpf, nome) VALUES (?, ?)", (cpf, nome))
+
+COM ORM:
+  await ClienteModel.create(cpf=cpf, nome=nome)
+```
+
+Benefícios:
+- Código mais legível e orientado a objetos
+- Troca de banco de dados sem reescrever queries
+- Validações e relacionamentos declarativos
+
+---
+
+## Por que Tortoise ORM?
+
+O Tortoise ORM é o ORM mais adequado para aplicações **FastAPI/asyncio** porque:
+
+| Característica | Tortoise ORM | SQLAlchemy (síncrono) |
+|---|---|---|
+| Operações de banco | todas `async` | síncronas (requer extensão async) |
+| Integração FastAPI | nativa via `register_tortoise` | requer configuração manual |
+| Sintaxe | inspirada no Django ORM | SQL Expression Language própria |
+
+---
+
+## Instalação
+
+```bash
+pip install tortoise-orm aiosqlite
+```
+
+- `tortoise-orm` — o ORM em si
+- `aiosqlite` — driver assíncrono para SQLite (necessário para `sqlite://`)
+
+---
+
+## Definindo Models
+
+Um **Model** é uma classe Python que representa uma tabela no banco.
+Cada atributo de classe representa uma coluna.
+
+```python
+# infrastructure/tortoise/models.py
+from tortoise import fields
+from tortoise.models import Model
+
+class ClienteModel(Model):
+    cpf  = fields.CharField(primary_key=True, max_length=14)
+    nome = fields.CharField(max_length=100, default="")
+
+    class Meta:
+        table = "clientemodel"
+```
+
+### Tipos de campos mais comuns
+
+| Campo | Tipo Python | Uso |
+|---|---|---|
+| `CharField` | `str` | textos com tamanho máximo |
+| `IntField` | `int` | inteiros |
+| `FloatField` | `float` | decimais |
+| `BooleanField` | `bool` | verdadeiro/falso |
+| `DatetimeField` | `datetime` | data e hora |
+
+### Chave primária autoincrement
+
+```python
+class PedidoModel(Model):
+    codigo = fields.IntField(primary_key=True)   # SQLite gera o valor automaticamente
+    cpf_cliente = fields.CharField(max_length=14)
+    qtd_max_produtos = fields.IntField()
+    estaEntregue = fields.BooleanField(default=False)
+    esta_cancelado = fields.BooleanField(default=False)
+    observacao = fields.CharField(max_length=200, default="")
+```
+
+> Quando `primary_key=True` em um `IntField`, o SQLite gera o valor
+> automaticamente (autoincrement) — você não precisa informar o código ao criar.
+
+---
+
+## Configurando o Tortoise ORM
+
+A configuração fica em um dicionário Python centralizado:
+
+```python
+# infrastructure/tortoise/config.py
+TORTOISE_ORM = {
+    "connections": {
+        "default": "sqlite://lanchonete.db"   # arquivo na raiz do projeto
+    },
+    "apps": {
+        "models": {
+            "models": ["infrastructure.tortoise.models"],  # onde estão os Models
+            "default_connection": "default",
+        }
+    },
+}
+```
+
+### Formato das connection strings
+
+| Banco | String de conexão |
+|---|---|
+| SQLite (arquivo) | `sqlite://lanchonete.db` |
+| SQLite (memória) | `sqlite://:memory:` |
+| PostgreSQL | `postgres://user:pass@host:5432/db` |
+| MySQL | `mysql://user:pass@host:3306/db` |
+
+---
+
+## Integrando ao FastAPI com register_tortoise
+
+O `register_tortoise` conecta o ciclo de vida da aplicação FastAPI ao Tortoise:
+inicializa a conexão quando a app sobe e fecha quando ela para.
+
+```python
+# main.py
+from fastapi import FastAPI
+from tortoise.contrib.fastapi import register_tortoise
+from infrastructure.tortoise.config import TORTOISE_ORM
+
+app = FastAPI()
+
+# ... inclusão de routers ...
+
+register_tortoise(
+    app,
+    config=TORTOISE_ORM,
+    generate_schemas=True,       # cria as tabelas automaticamente se não existirem
+    add_exception_handlers=True, # trata erros do ORM com respostas HTTP adequadas
+)
+```
+
+> Com `generate_schemas=True`, ao subir a aplicação pela primeira vez o arquivo
+> `lanchonete.db` é criado e todas as tabelas são geradas automaticamente.
+
+---
+
+## Operações CRUD com Tortoise
+
+### CREATE — criar registro
+
+```python
+cliente = await ClienteModel.create(cpf="11122233344", nome="João")
+```
+
+### CREATE ou UPDATE — upsert
+
+```python
+# Se não existir, cria. Se existir, atualiza.
+await ClienteModel.update_or_create(
+    defaults={"nome": nome},
+    cpf=cpf,
+)
+```
+
+### READ — buscar por chave primária
+
+```python
+cliente = await ClienteModel.get_or_none(cpf="11122233344")
+# retorna None se não encontrado (em vez de levantar exceção)
+```
+
+### READ — buscar múltiplos com filtro
+
+```python
+cancelados = await PedidoModel.filter(esta_cancelado=True).all()
+```
+
+### UPDATE — atualizar campo
+
+```python
+pedido = await PedidoModel.get_or_none(codigo=1)
+if pedido:
+    pedido.estaEntregue = True
+    await pedido.save()
+```
+
+### DELETE — excluir
+
+```python
+await ClienteModel.filter(cpf="11122233344").delete()
+```
+
+---
+
+## Padrão Repository com Tortoise
+
+O **Repository Pattern** isola o acesso ao banco do resto da aplicação.
+O serviço não conhece o Tortoise — ele só chama métodos do repositório.
+
+```
+Rota (FastAPI)
+  ↓ chama
+Serviço (regras de negócio)
+  ↓ chama
+Repositório (acesso ao banco)
+  ↓ usa
+Tortoise ORM → SQLite
+```
+
+### Exemplo: ClienteRepoTortoise
+
+```python
+# repositories/tortoise/cliente_repo.py
+from infrastructure.tortoise.models import ClienteModel
+from domain.cliente import Cliente
+
+class ClienteRepoTortoise:
+
+    async def get(self, cpf: str) -> Cliente | None:
+        model = await ClienteModel.get_or_none(cpf=cpf)
+        if not model:
+            return None
+        return Cliente(cpf=model.cpf, nome=model.nome)   # ORM → Domínio
+
+    async def save(self, cliente: Cliente) -> None:
+        await ClienteModel.update_or_create(
+            defaults={"nome": cliente.nome},
+            cpf=cliente.cpf,
+        )
+```
+
+### Por que converter ORM Model → Domínio?
+
+O Model ORM (`ClienteModel`) é um objeto ligado ao banco — ele carrega metadados
+do Tortoise, estado de conexão, etc. A entidade de domínio (`Cliente`) é um
+objeto Python puro, sem dependência de infraestrutura.
+
+Manter a separação garante que o domínio possa ser testado sem banco de dados.
+
+---
+
+## Injeção de dependência no FastAPI
+
+Os repositórios e o serviço são injetados nas rotas via `Depends`:
+
+```python
+# app/deps.py
+from services.lanchonete_service import LanchoneteService
+from repositories.tortoise.cliente_repo import ClienteRepoTortoise
+from repositories.tortoise.produto_repo import ProdutoRepoTortoise
+from repositories.tortoise.pedido_repo import PedidoRepoTortoise
+
+def get_service_tortoise() -> LanchoneteService:
+    return LanchoneteService(
+        ClienteRepoTortoise(),
+        ProdutoRepoTortoise(),
+        PedidoRepoTortoise(),
+    )
+```
+
+```python
+# api/routes/clientes.py
+from fastapi import APIRouter, Depends
+from app.deps import get_service_tortoise
+
+router = APIRouter(prefix="/clientes")
+
+@router.post("")
+async def criar(payload: ClienteCreate, svc = Depends(get_service_tortoise)):
+    cliente = await svc.criar_cliente(payload.cpf, payload.nome)
+    return ClienteOut(cpf=cliente.cpf, nome=cliente.nome)
+```
+
+> A cada requisição, o FastAPI chama `get_service_tortoise()` e injeta
+> o serviço na função. Isso facilita a troca da implementação (ex: trocar
+> SQLite por PostgreSQL) sem alterar as rotas.
+
+---
+
+## Estrutura de arquivos adicionados
+
+```
+infrastructure/
+    tortoise/
+        __init__.py
+        config.py        ← configuração da conexão com o banco
+        models.py        ← definição das tabelas (ClienteModel, ProdutoModel, ...)
+
+repositories/
+    tortoise/
+        __init__.py
+        cliente_repo.py  ← CRUD de clientes via Tortoise
+        produto_repo.py  ← CRUD de produtos via Tortoise
+        pedido_repo.py   ← CRUD de pedidos e itens via Tortoise
+
+app/
+    __init__.py
+    deps.py              ← factory de dependência para o FastAPI
+```
+
+---
 
 ## O que mudou após a migração para ORM?
 
