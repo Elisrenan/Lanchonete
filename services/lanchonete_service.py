@@ -140,5 +140,25 @@ class LanchoneteService:
         """
         return db.pedidos_por_codigo.get(cod_pedido)
 
+    def cancelar_pedido(self, cod_pedido: int) -> bool:
+        """Cancela um pedido existente, desde que não esteja finalizado ou já cancelado.
+
+        Returns:
+            True se cancelado com sucesso, False caso contrário.
+        """
+        pedido = db.pedidos_por_codigo.get(cod_pedido)
+        if pedido is None:
+            return False
+        return pedido.cancelar()
+
+    def listar_pedidos_cancelados(self) -> list[Pedido]:
+        """Retorna todos os pedidos com estado cancelado.
+
+        Returns:
+            Lista de pedidos cancelados.
+        """
+        pedidos = list(db.pedidos_por_codigo.values())
+        return [p for p in pedidos if p.esta_cancelado]
+
 
 service = LanchoneteService()

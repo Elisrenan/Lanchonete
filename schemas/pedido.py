@@ -22,4 +22,5 @@ class PedidoOut(BaseModel):
     codigo: int
     cpf: str
     esta_entregue: bool
+    esta_cancelado: bool
     produtos: List[int]
