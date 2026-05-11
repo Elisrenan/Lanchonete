@@ -49,6 +49,15 @@ async def finalizar(cod_pedido: int, svc: LanchoneteService = Depends(get_servic
     return {"total": total}
 
 
+@router.get("/{cod_pedido}/observacao", response_model=ObservacaoOut)
+async def buscar_observacao(cod_pedido: int, svc: LanchoneteService = Depends(get_service_tortoise)):
+    """Retorna a observação registrada em um pedido."""
+    raw = await svc.buscar_observacao_pedido(cod_pedido)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+    return ObservacaoOut(codigo=raw["codigo"], observacao=raw["observacao"])
+
+
 @router.get("/cancelados", response_model=list[PedidoOut])
 async def listar_pedidos_cancelados(svc: LanchoneteService = Depends(get_service_tortoise)):
     """Lista todos os pedidos cancelados."""

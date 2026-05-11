@@ -2,56 +2,84 @@
 # conftest.py — Configurações compartilhadas entre todos os testes
 # =============================================================================
 #
-# O pytest carrega este arquivo automaticamente antes de executar qualquer
-# teste. Aqui ficam os "fixtures": funções reutilizáveis que preparam o
-# ambiente antes de cada teste e fazem a limpeza depois.
+# Com a migração para Tortoise ORM async, este arquivo foi reescrito para:
 #
-# O que é um fixture?
-#   É uma função decorada com @pytest.fixture que devolve um objeto pronto
-#   para ser usado nos testes. Os testes declaram o fixture como parâmetro
-#   e o pytest cuida de executá-lo e injetá-lo automaticamente.
+#   1. Inicializar o Tortoise com SQLite em memória (:memory:) antes de cada
+#      teste, garantindo que cada teste parte de um banco totalmente vazio.
+#   2. Fechar a conexão após o teste — o SQLite :memory: é destruído junto,
+#      sem deixar nada no disco.
+#   3. Fornecer um cliente HTTP assíncrono (httpx.AsyncClient) que despacha
+#      requisições direto ao app FastAPI, sem abrir porta de rede.
+#
+# Por que não usar TestClient (síncrono)?
+#   O TestClient cria seu próprio event loop, o que conflita com o Tortoise
+#   que já tem uma conexão assíncrona ativa no event loop do pytest-asyncio.
+#   O AsyncClient + ASGITransport reutiliza o mesmo event loop, evitando o
+#   conflito.
+#
+# Por que SQLite :memory: e não lanchonete.db?
+#   O banco em arquivo acumularia dados entre testes, quebrando o isolamento.
+#   Com :memory:, cada conexão começa do zero — sem estado residual.
 # =============================================================================
 
 import pytest
-from fastapi.testclient import TestClient
+import pytest_asyncio
+from httpx import AsyncClient, ASGITransport
+from tortoise import Tortoise
+
 from main import app
-from repositories.memory import db
+
+_TORTOISE_TEST_MODULES = {"models": ["infrastructure.tortoise.models"]}
 
 
-@pytest.fixture(autouse=True)
-def reset_memory_db():
-    """Limpa o banco de dados em memória antes de cada teste.
+@pytest_asyncio.fixture(autouse=True)
+async def init_test_db():
+    """Inicializa o banco SQLite em memória e cria as tabelas antes de cada teste.
 
     Por que isso é necessário?
-    Os testes não podem depender uns dos outros. Se um teste criar um cliente
-    e o próximo esperar que o banco esteja vazio, o segundo falhará por causa
-    do primeiro. Resetar o banco antes de cada teste garante isolamento total.
+        O Tortoise ORM precisa de uma conexão ativa para executar qualquer
+        operação assíncrona de banco. Em testes, usamos :memory: para garantir
+        que cada teste começa com um banco completamente vazio, sem depender
+        de estado deixado por testes anteriores.
 
-    O parâmetro autouse=True faz com que este fixture seja executado
-    automaticamente para TODOS os testes, sem precisar declará-lo como
-    parâmetro nas funções de teste.
+    O autouse=True faz este fixture rodar automaticamente para TODOS os
+    testes, sem precisar declará-lo como parâmetro nas funções de teste.
 
-    O comando `yield` separa a fase de preparação (antes) da fase de
-    limpeza (depois). Aqui só há preparação, mas o yield é necessário
-    para que o pytest saiba quando o teste terminou.
+    Fluxo (separado pelo yield):
+        ANTES do teste:
+            1. Tortoise.init()       → abre conexão com SQLite :memory:
+            2. generate_schemas()    → cria as tabelas (ClienteModel, etc.)
+        DEPOIS do teste:
+            3. close_connections()   → fecha a conexão, destruindo o :memory:
     """
-    db.clientes_por_cpf.clear()
-    db.produtos_por_id.clear()
-    db.pedidos_por_codigo.clear()
+    await Tortoise.init(db_url="sqlite://:memory:", modules=_TORTOISE_TEST_MODULES)
+    await Tortoise.generate_schemas()
     yield
+    await Tortoise.close_connections()
 
 
-@pytest.fixture
-def client():
-    """Cria um cliente HTTP para testar a API sem subir um servidor real.
+@pytest_asyncio.fixture
+async def client():
+    """Cria um cliente HTTP assíncrono para testar a API sem subir um servidor real.
 
-    O TestClient simula requisições HTTP diretamente na aplicação FastAPI,
-    sem precisar de uma porta de rede. Isso torna os testes muito mais
-    rápidos e simples de rodar em qualquer ambiente.
+    O AsyncClient do httpx com ASGITransport despacha as requisições
+    diretamente para o app FastAPI no mesmo event loop assíncrono do
+    pytest-asyncio. Isso mantém compatibilidade com o Tortoise já
+    inicializado pelo fixture init_test_db.
+
+    Como o ASGITransport funciona?
+        Ele implementa a interface ASGI, simulando as requisições HTTP
+        dentro do processo Python, sem usar sockets de rede reais.
+        Isso torna os testes muito mais rápidos.
 
     Como usar:
-        def test_exemplo(client):        # <-- pytest injeta o client aqui
-            r = client.get("/health")
+        async def test_exemplo(client):        # pytest injeta o client aqui
+            r = await client.get("/health")
             assert r.status_code == 200
     """
-    return TestClient(app)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        yield ac
+
