@@ -1,33 +1,37 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from schemas.pedido import PedidoCreate, PedidoAddItem, PedidoOut, ObservacaoInput, ObservacaoOut
-from services.lanchonete_service import service
+from services.lanchonete_service import LanchoneteService
+from app.deps import get_service_tortoise
 
 router = APIRouter(prefix="/lanchonete/pedidos", tags=["pedidos"])
 
 
+def _raw_to_pedido_out(raw: dict) -> PedidoOut:
+    return PedidoOut(
+        codigo=raw["codigo"],
+        cpf=raw["cpf_cliente"],
+        esta_entregue=raw["estaEntregue"],
+        esta_cancelado=raw["esta_cancelado"],
+        produtos=raw["itens"],
+    )
+
+
 @router.post("", response_model=PedidoOut)
-def criar(payload: PedidoCreate):
+async def criar(payload: PedidoCreate, svc: LanchoneteService = Depends(get_service_tortoise)):
     """Cria um pedido com o primeiro produto já adicionado."""
-    pedido = service.criar_pedido(payload.cpf, payload.cod_produto, payload.qtd_max_produtos)
-    if not pedido:
+    raw = await svc.criar_pedido(payload.cpf, payload.cod_produto, payload.qtd_max_produtos)
+    if not raw:
         raise HTTPException(
             status_code=404,
             detail="Cliente ou produto não encontrado"
         )
-
-    return PedidoOut(
-        codigo=pedido.codigo,
-        cpf=pedido.cliente.cpf,
-        esta_entregue=pedido.esta_entregue,
-        esta_cancelado=pedido.esta_cancelado,
-        produtos=[p.codigo for p in pedido.listaProdutos],
-    )
+    return _raw_to_pedido_out(raw)
 
 
 @router.put("/{cod_pedido}/itens")
-def adicionar_item(cod_pedido: int, payload: PedidoAddItem):
+async def adicionar_item(cod_pedido: int, payload: PedidoAddItem, svc: LanchoneteService = Depends(get_service_tortoise)):
     """Adiciona um produto a um pedido existente."""
-    ok = service.alterar_pedido(cod_pedido, payload.cod_produto)
+    ok = await svc.adicionar_item_pedido(cod_pedido, payload.cod_produto)
     if not ok:
         raise HTTPException(
             status_code=400,
@@ -37,49 +41,34 @@ def adicionar_item(cod_pedido: int, payload: PedidoAddItem):
 
 
 @router.post("/{cod_pedido}/finalizar")
-def finalizar(cod_pedido: int):
+async def finalizar(cod_pedido: int, svc: LanchoneteService = Depends(get_service_tortoise)):
     """Finaliza um pedido e retorna o total calculado."""
-    total = service.finalizar_pedido(cod_pedido)
+    total = await svc.finalizar_pedido(cod_pedido)
     if total is None:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
     return {"total": total}
 
 
 @router.get("/cancelados", response_model=list[PedidoOut])
-def listar_pedidos_cancelados():
+async def listar_pedidos_cancelados(svc: LanchoneteService = Depends(get_service_tortoise)):
     """Lista todos os pedidos cancelados."""
-    pedidos = service.listar_pedidos_cancelados()
-    return [
-        PedidoOut(
-            codigo=p.codigo,
-            cpf=p.cliente.cpf,
-            esta_entregue=p.esta_entregue,
-            esta_cancelado=p.esta_cancelado,
-            produtos=[prod.codigo for prod in p.listaProdutos],
-        )
-        for p in pedidos
-    ]
+    cancelados = await svc.listar_pedidos_cancelados()
+    return [_raw_to_pedido_out(raw) for raw in cancelados]
 
 
 @router.get("/{cod_pedido}", response_model=PedidoOut)
-def obter(cod_pedido: int):
+async def obter(cod_pedido: int, svc: LanchoneteService = Depends(get_service_tortoise)):
     """Busca um pedido pelo código."""
-    pedido = service.obter_pedido(cod_pedido)
-    if not pedido:
+    raw = await svc.obter_pedido_raw(cod_pedido)
+    if not raw:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
-    return PedidoOut(
-        codigo=pedido.codigo,
-        cpf=pedido.cliente.cpf,
-        esta_entregue=pedido.esta_entregue,
-        esta_cancelado=pedido.esta_cancelado,
-        produtos=[p.codigo for p in pedido.listaProdutos],
-    )
+    return _raw_to_pedido_out(raw)
 
 
 @router.patch("/{cod_pedido}/cancelar")
-def cancelar_pedido(cod_pedido: int):
+async def cancelar_pedido(cod_pedido: int, svc: LanchoneteService = Depends(get_service_tortoise)):
     """Cancela um pedido existente."""
-    resultado = service.cancelar_pedido(cod_pedido)
+    resultado = await svc.cancelar_pedido(cod_pedido)
     if not resultado:
         raise HTTPException(
             status_code=400,
@@ -89,9 +78,9 @@ def cancelar_pedido(cod_pedido: int):
 
 
 @router.post("/{cod_pedido}/observacao")
-def adicionar_observacao(cod_pedido: int, body: ObservacaoInput):
+async def adicionar_observacao(cod_pedido: int, body: ObservacaoInput, svc: LanchoneteService = Depends(get_service_tortoise)):
     """Adiciona ou substitui a observação de um pedido."""
-    resultado = service.adicionar_observacao(cod_pedido, body.observacao)
+    resultado = await svc.adicionar_observacao(cod_pedido, body.observacao)
     if not resultado:
         raise HTTPException(
             status_code=400,

@@ -1,14 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from schemas.produto import ProdutoCreate, ProdutoOut, ProdutoAlterarValor
-from services.lanchonete_service import service
+from services.lanchonete_service import LanchoneteService
+from app.deps import get_service_tortoise
 
 router = APIRouter(prefix="/produtos", tags=["produtos"])
 
 
 @router.post("", response_model=ProdutoOut)
-def criar(payload: ProdutoCreate):
+async def criar(payload: ProdutoCreate, svc: LanchoneteService = Depends(get_service_tortoise)):
     """Cria um novo produto."""
-    produto = service.criar_produto(
+    produto = await svc.criar_produto(
         payload.codigo,
         payload.valor,
         payload.tipo,
@@ -18,18 +19,18 @@ def criar(payload: ProdutoCreate):
 
 
 @router.get("/{codigo}", response_model=ProdutoOut)
-def obter(codigo: int):
+async def obter(codigo: int, svc: LanchoneteService = Depends(get_service_tortoise)):
     """Busca um produto pelo código."""
-    produto = service.obter_produto(codigo)
+    produto = await svc.obter_produto(codigo)
     if not produto:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     return ProdutoOut(**produto.__dict__)
 
 
 @router.put("/{codigo}/valor")
-def alterar_valor(codigo: int, payload: ProdutoAlterarValor):
+async def alterar_valor(codigo: int, payload: ProdutoAlterarValor, svc: LanchoneteService = Depends(get_service_tortoise)):
     """Atualiza o valor de um produto existente."""
-    alterou = service.alterar_valor_produto(codigo, payload.novo_valor)
+    alterou = await svc.alterar_valor_produto(codigo, payload.novo_valor)
     if not alterou:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     return {"alterou": True}

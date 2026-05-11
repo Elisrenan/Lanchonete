@@ -1,187 +1,107 @@
 from domain.cliente import Cliente
-from domain.pedido import Pedido
 from domain.produto import Produto
-from repositories.memory import db
 
 
 class LanchoneteService:
-    """Serviço principal com as regras de negócio da lanchonete.
 
-    Coordena operações sobre clientes, produtos e pedidos,
-    delegando a persistência ao repositório em memória.
-    """
+    def __init__(self, cliente_repo, produto_repo, pedido_repo):
+        self.cliente_repo = cliente_repo
+        self.produto_repo = produto_repo
+        self.pedido_repo = pedido_repo
 
-    def criar_cliente(self, cpf: str, nome: str = "") -> Cliente:
-        """Cria um novo cliente ou retorna o existente com o mesmo CPF.
-
-        Args:
-            cpf: CPF do cliente (não pode ser vazio ou apenas espaços).
-            nome: Nome do cliente (opcional).
-
-        Returns:
-            Cliente criado ou já existente.
-
-        Raises:
-            ValueError: Se o CPF for vazio.
-        """
+    async def criar_cliente(self, cpf: str, nome: str = "") -> Cliente:
         if not cpf.strip():
             raise ValueError("CPF não pode ser vazio")
-
-        if cpf in db.clientes_por_cpf:
-            return db.clientes_por_cpf[cpf]
+        existente = await self.cliente_repo.get(cpf)
+        if existente:
+            return existente
         cliente = Cliente(cpf=cpf, nome=nome)
-        db.clientes_por_cpf[cpf] = cliente
+        await self.cliente_repo.save(cliente)
         return cliente
 
-    def obter_cliente(self, cpf: str) -> Cliente | None:
-        """Busca um cliente pelo CPF.
+    async def obter_cliente(self, cpf: str) -> Cliente | None:
+        return await self.cliente_repo.get(cpf)
 
-        Returns:
-            Cliente encontrado ou None.
-        """
-        return db.clientes_por_cpf.get(cpf)
-
-    def criar_produto(self, codigo: int, valor: float, tipo: int, desconto_percentual: float = 0.0) -> Produto:
-        """Cria e persiste um novo produto.
-
-        Args:
-            codigo: Identificador único do produto.
-            valor: Preço base.
-            tipo: Tipo do produto (1 = com desconto, 2 = sem desconto).
-            desconto_percentual: Percentual de desconto a aplicar. Padrão: 0.
-
-        Returns:
-            Produto criado.
-        """
+    async def criar_produto(self, codigo: int, valor: float, tipo: int, desconto_percentual: float = 0.0) -> Produto:
         produto = Produto(codigo=codigo, valor=valor, tipo=tipo, desconto_percentual=desconto_percentual)
-        db.produtos_por_id[codigo] = produto
+        await self.produto_repo.save(produto)
         return produto
 
-    def obter_produto(self, codigo: int) -> Produto | None:
-        """Busca um produto pelo código.
+    async def obter_produto(self, codigo: int) -> Produto | None:
+        return await self.produto_repo.get(codigo)
 
-        Returns:
-            Produto encontrado ou None.
-        """
-        return db.produtos_por_id.get(codigo)
-
-    def alterar_valor_produto(self, codigo: int, novo_valor: float) -> bool:
-        """Atualiza o preço base de um produto existente.
-
-        Args:
-            codigo: Código do produto.
-            novo_valor: Novo valor a ser atribuído.
-
-        Returns:
-            True se alterado, False se o produto não foi encontrado.
-        """
-        produto = self.obter_produto(codigo)
+    async def alterar_valor_produto(self, codigo: int, novo_valor: float) -> bool:
+        produto = await self.obter_produto(codigo)
         if not produto:
             return False
-        produto.valor = novo_valor
+        produto.valor = float(novo_valor)
+        await self.produto_repo.save(produto)
         return True
 
-    def criar_pedido(self, cpf: str, cod_produto: int, qtd_max_produtos: int) -> Pedido | None:
-        """Cria um pedido com o primeiro produto já adicionado.
-
-        Args:
-            cpf: CPF do cliente.
-            cod_produto: Código do primeiro produto do pedido.
-            qtd_max_produtos: Limite máximo de produtos no pedido.
-
-        Returns:
-            Pedido criado ou None se cliente/produto não encontrado.
-        """
-        cliente = self.obter_cliente(cpf)
-        produto = self.obter_produto(cod_produto)
+    async def criar_pedido(self, cpf: str, cod_produto: int, qtd_max_produtos: int) -> dict | None:
+        cliente = await self.obter_cliente(cpf)
+        produto = await self.obter_produto(cod_produto)
         if not cliente or not produto:
             return None
-        pedido = Pedido(cliente=cliente, qtd_max_produtos=qtd_max_produtos)
-        if not pedido.adicionar_produto(produto):
+        codigo = await self.pedido_repo.create(cpf_cliente=cpf, qtd_max_produtos=qtd_max_produtos)
+        await self.pedido_repo.add_item(codigo, produto.codigo)
+        return await self.pedido_repo.get_raw(codigo)
+
+    async def adicionar_item_pedido(self, cod_pedido: int, cod_produto: int) -> bool:
+        raw = await self.pedido_repo.get_raw(cod_pedido)
+        if not raw:
+            return False
+        if raw["esta_cancelado"]:
+            return False
+        produto = await self.obter_produto(cod_produto)
+        if not produto:
+            return False
+        if len(raw["itens"]) >= int(raw["qtd_max_produtos"]):
+            return False
+        await self.pedido_repo.add_item(cod_pedido, produto.codigo)
+        return True
+
+    async def finalizar_pedido(self, cod_pedido: int) -> float | None:
+        raw = await self.pedido_repo.get_raw(cod_pedido)
+        if not raw:
             return None
-        db.pedidos_por_codigo[pedido.codigo] = pedido
-        return pedido
+        total = 0.0
+        for cod in raw["itens"]:
+            p = await self.obter_produto(cod)
+            total += p.preco_final()
+        await self.pedido_repo.set_entregue(cod_pedido, True)
+        return float(total)
 
-    def alterar_pedido(self, cod_pedido: int, cod_produto: int) -> bool:
-        """Adiciona um produto a um pedido existente.
+    async def obter_pedido_raw(self, cod_pedido: int) -> dict | None:
+        return await self.pedido_repo.get_raw(cod_pedido)
 
-        Args:
-            cod_pedido: Código do pedido.
-            cod_produto: Código do produto a adicionar.
-
-        Returns:
-            True se adicionado, False se pedido/produto inválido ou limite excedido.
-        """
-        pedido = db.pedidos_por_codigo.get(cod_pedido)
-        produto = self.obter_produto(cod_produto)
-        if not pedido or not produto:
+    async def cancelar_pedido(self, cod_pedido: int) -> bool:
+        raw = await self.pedido_repo.get_raw(cod_pedido)
+        if raw is None:
             return False
-        return pedido.adicionar_produto(produto)
-
-    def finalizar_pedido(self, cod_pedido: int) -> float | None:
-        """Finaliza um pedido e retorna o total calculado.
-
-        Args:
-            cod_pedido: Código do pedido.
-
-        Returns:
-            Total do pedido ou None se não encontrado.
-        """
-        pedido = db.pedidos_por_codigo.get(cod_pedido)
-        if not pedido:
-            return None
-        return pedido.finalizar()
-
-    def obter_pedido(self, cod_pedido: int) -> Pedido | None:
-        """Busca um pedido pelo código.
-
-        Returns:
-            Pedido encontrado ou None.
-        """
-        return db.pedidos_por_codigo.get(cod_pedido)
-
-    def cancelar_pedido(self, cod_pedido: int) -> bool:
-        """Cancela um pedido existente, desde que não esteja finalizado ou já cancelado.
-
-        Returns:
-            True se cancelado com sucesso, False caso contrário.
-        """
-        pedido = db.pedidos_por_codigo.get(cod_pedido)
-        if pedido is None:
+        if raw["estaEntregue"] or raw["esta_cancelado"]:
             return False
-        return pedido.cancelar()
+        await self.pedido_repo.set_cancelado(cod_pedido)
+        return True
 
-    def listar_pedidos_cancelados(self) -> list[Pedido]:
-        """Retorna todos os pedidos com estado cancelado.
+    async def listar_pedidos_cancelados(self) -> list[dict]:
+        return await self.pedido_repo.listar_cancelados()
 
-        Returns:
-            Lista de pedidos cancelados.
-        """
-        pedidos = list(db.pedidos_por_codigo.values())
-        return [p for p in pedidos if p.esta_cancelado]
-
-    def adicionar_observacao(self, cod_pedido: int, observacao: str) -> bool:
-        """Adiciona ou substitui a observação de um pedido.
-
-        Args:
-            cod_pedido: Código do pedido.
-            observacao: Texto da observação.
-
-        Returns:
-            True se registrada, False se pedido não encontrado ou inválido.
-        """
-        pedido = db.pedidos_por_codigo.get(cod_pedido)
-        if pedido is None:
+    async def adicionar_observacao(self, cod_pedido: int, observacao: str) -> bool:
+        raw = await self.pedido_repo.get_raw(cod_pedido)
+        if raw is None:
             return False
-        return pedido.adicionar_observacao(observacao)
+        if raw["estaEntregue"]:
+            return False
+        if observacao is None:
+            return False
+        observacao = observacao.strip()
+        if observacao == "":
+            return False
+        if len(observacao) > 200:
+            return False
+        await self.pedido_repo.set_observacao(cod_pedido, observacao)
+        return True
 
-    def buscar_observacao_pedido(self, cod_pedido: int) -> Pedido | None:
-        """Busca um pedido para retornar sua observação.
-
-        Returns:
-            Pedido encontrado ou None.
-        """
-        return db.pedidos_por_codigo.get(cod_pedido)
-
-
-service = LanchoneteService()
+    async def buscar_observacao_pedido(self, cod_pedido: int) -> dict | None:
+        return await self.pedido_repo.get_raw(cod_pedido)

@@ -1,6 +1,7 @@
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
+aiosqlite==0.22.1
 certifi==2026.4.22
 click==8.3.3
 dnspython==2.8.0
@@ -15,12 +16,14 @@ httptools==0.7.1
 httpx==0.28.1
 idna==3.13
 iniconfig==2.3.0
+iso8601==2.1.0
 Jinja2==3.1.6
 markdown-it-py==4.0.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
 packaging==26.2
 pluggy==1.6.0
+pypika-tortoise==0.6.5
 pydantic==2.13.3
 pydantic-extra-types==2.11.1
 pydantic-settings==2.14.0
@@ -36,6 +39,7 @@ rignore==0.7.6
 sentry-sdk==2.58.0
 shellingham==1.5.4
 starlette==1.0.0
+tortoise-orm==1.1.7
 typer==0.25.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
